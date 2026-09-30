@@ -7,13 +7,16 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
+import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.math.BigDecimal;
 import java.util.UUID;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -24,6 +27,14 @@ class OrderApiIntegrationTest {
 
     private final UUID FIRST_ORDER_ID = UUID.fromString("00000000-0000-4000-8000-000000000001");
     private final UUID SECOND_ORDER_ID = UUID.fromString("00000000-0000-4000-8000-000000000002");
+    private final String VALID_ORDER_JSON = """
+            {
+              "items": [
+                { "name": "First item", "quantity": 1, "unitPrice": 10.50 },
+                { "name": "Second item", "quantity": 2, "unitPrice": 20.00 }
+              ]
+            }
+            """;
 
     @Autowired
     private MockMvc mockMvc;
@@ -96,6 +107,84 @@ class OrderApiIntegrationTest {
                 .andExpect(jsonPath("$.data[0].items[0].lineNumber").doesNotExist());
     }
 
+    @Test
+    void createsOrderWithStatusNew() throws Exception {
+        mockMvc.perform(post("/api/orders")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(VALID_ORDER_JSON))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.id").isNotEmpty())
+                .andExpect(jsonPath("$.status").value("NEW"))
+                .andExpect(jsonPath("$.createdAt").isNotEmpty())
+                .andExpect(jsonPath("$.items[0].name").value("First item"))
+                .andExpect(jsonPath("$.items[1].name").value("Second item"));
+    }
+
+    @Test
+    void createdOrderAppearsInList() throws Exception {
+        mockMvc.perform(post("/api/orders")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(VALID_ORDER_JSON))
+                .andExpect(status().isCreated());
+
+        mockMvc.perform(get("/api/orders"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.length()").value(1))
+                .andExpect(jsonPath("$.data[0].items.length()").value(2));
+    }
+
+    @Test
+    void trimsItemNames() throws Exception {
+        mockMvc.perform(post("/api/orders")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                { "items": [ { "name": "  Kontoritool  ", "quantity": 1, "unitPrice": 249.00 } ] }
+                                """))
+                .andExpect(status().isCreated());
+
+        String storedName = jdbcClient.sql("SELECT name FROM order_items")
+                .query(String.class)
+                .single();
+
+        assertThat(storedName).isEqualTo("Kontoritool");
+    }
+
+    @Test
+    void rejectsEmptyItems() throws Exception {
+        mockMvc.perform(post("/api/orders")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                { "items": [] }
+                                """))
+                .andExpect(status().isBadRequest());
+
+        assertThat(countOrders()).isZero();
+    }
+
+    @Test
+    void rejectsPriceWithMoreThanTwoDecimals() throws Exception {
+        mockMvc.perform(post("/api/orders")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                { "items": [ { "name": "Item", "quantity": 1, "unitPrice": 10.505 } ] }
+                                """))
+                .andExpect(status().isBadRequest());
+
+        assertThat(countOrders()).isZero();
+    }
+
+    @Test
+    void rejectsUnknownField() throws Exception {
+        mockMvc.perform(post("/api/orders")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                { "status": "PAID", "items": [ { "name": "Item", "quantity": 1, "unitPrice": 10.00 } ] }
+                                """))
+                .andExpect(status().isBadRequest());
+
+        assertThat(countOrders()).isZero();
+    }
+
     private void insertOrder(UUID id, String status, String createdAt) {
         jdbcClient.sql("INSERT INTO orders (id, status, created_at) VALUES (?, ?, CAST(? AS timestamptz))")
                 .params(id, status, createdAt)
@@ -106,5 +195,11 @@ class OrderApiIntegrationTest {
         jdbcClient.sql("INSERT INTO order_items (order_id, line_number, name, quantity, unit_price) VALUES (?, ?, ?, ?, ?)")
                 .params(orderId, lineNumber, name, quantity, unitPrice)
                 .update();
+    }
+
+    private long countOrders() {
+        return jdbcClient.sql("SELECT count(*) FROM orders")
+                .query(Long.class)
+                .single();
     }
 }
