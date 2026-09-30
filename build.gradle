@@ -43,4 +43,5 @@ tasks.named('test') {
 
 tasks.named('bootRun') {
     systemProperty 'user.timezone', 'UTC'
+    systemProperty 'spring.profiles.active', 'dev'
 }
