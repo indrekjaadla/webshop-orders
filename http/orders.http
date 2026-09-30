@@ -1,0 +1,55 @@
+@baseUrl = http://localhost:8080
+
+### List all orders
+GET {{baseUrl}}/api/orders
+
+### Create a valid order
+POST {{baseUrl}}/api/orders
+Content-Type: application/json
+
+{
+  "items": [
+    {
+      "name": "Sülearvuti kott",
+      "quantity": 2,
+      "unitPrice": 39.90
+    }
+  ]
+}
+
+### Reject unknown field
+POST {{baseUrl}}/api/orders
+Content-Type: application/json
+
+{
+  "status": "PAID",
+  "items": [
+    {
+      "name": "Sülearvuti kott",
+      "quantity": 2,
+      "unitPrice": 39.90
+    }
+  ]
+}
+
+### Reject price with three decimals
+POST {{baseUrl}}/api/orders
+Content-Type: application/json
+
+{
+  "items": [
+    {
+      "name": "Sülearvuti kott",
+      "quantity": 2,
+      "unitPrice": 39.909
+    }
+  ]
+}
+
+### Reject empty items
+POST {{baseUrl}}/api/orders
+Content-Type: application/json
+
+{
+  "items": []
+}
