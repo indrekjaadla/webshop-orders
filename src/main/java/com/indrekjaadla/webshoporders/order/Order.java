@@ -36,7 +36,7 @@ class Order {
     private Instant createdAt;
 
     @OneToMany(cascade = CascadeType.ALL, orphanRemoval = true)
-    @JoinColumn(name = "order_id", nullable = false)
+    @JoinColumn(name = "order_id", nullable = false, updatable = false)
     @OrderBy("lineNumber")
     private List<OrderItem> items;
 
